@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <!--Child menu-->
+
+    <menuitem
+        id="backup_conf_menu"
+        name="Automated Backups"
+        action="action_backup_conf_form"
+        sequence="0"
+        parent="base.next_id_9"
+    />
+</odoo>
