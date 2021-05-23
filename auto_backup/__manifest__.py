@@ -24,7 +24,7 @@
         "data/ir_cron.xml",
         "data/mail_message_subtype.xml",
         "security/ir.model.access.csv",
-        "view/db_backup_view.xml",
+        "views/db_backup_view.xml",
     ],
     "installable": True,
     "external_dependencies": {
