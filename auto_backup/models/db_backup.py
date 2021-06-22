@@ -24,9 +24,9 @@ except ImportError:  # pragma: no cover
 
 
 class DbBackup(models.Model):
-    _description = "Database Backup"
     _name = "db.backup"
     _inherit = "mail.thread"
+    _description = "Database Backup"
 
     _sql_constraints = [
         ("name_unique", "UNIQUE(name)", "Cannot duplicate a configuration."),
@@ -42,60 +42,77 @@ class DbBackup(models.Model):
         store=True,
         help="Summary of this backup process",
     )
+
     folder = fields.Char(
+        required=True,
         default=lambda self: self._default_folder(),
         help="Absolute path for storing the backups",
-        required=True,
     )
+
     days_to_keep = fields.Integer(
         required=True,
-        default=0,
-        help="Backups older than this will be deleted automatically. "
-        "Set 0 to disable autodeletion.",
+        help=(
+            "Backups older than this will be deleted automatically. Set 0 to"
+            " disable autodeletion."
+        ),
     )
+
     method = fields.Selection(
-        [("local", "Local disk"), ("sftp", "Remote SFTP server")],
+        selection=[("local", "Local disk"), ("sftp", "Remote SFTP server")],
         default="local",
         help="Choose the storage method for this backup.",
     )
+
     sftp_host = fields.Char(
-        "SFTP Server",
+        string="SFTP Server",
         help=(
-            "The host name or IP address from your remote"
-            " server. For example 192.168.0.1"
+            "The host name or IP address from your remote server. For example"
+            " 192.168.0.1"
         ),
     )
+
     sftp_port = fields.Integer(
-        "SFTP Port",
+        string="SFTP Port",
         default=22,
         help="The port on the FTP server that accepts SSH/SFTP calls.",
     )
+
     sftp_user = fields.Char(
-        "Username in the SFTP Server",
+        string="Username in the SFTP Server",
         help=(
-            "The username where the SFTP connection "
-            "should be made with. This is the user on the external server."
+            "The username where the SFTP connection should be made with. This"
+            " is the user on the external server."
         ),
     )
+
     sftp_password = fields.Char(
-        "SFTP Password",
-        help="The password for the SFTP connection. If you specify a private "
-        "key file, then this is the password to decrypt it.",
+        string="SFTP Password",
+        help=(
+            "The password for the SFTP connection. If you specify a private"
+            " key file, then this is the password to decrypt it."
+        ),
     )
+
     sftp_private_key = fields.Char(
-        "Private key location",
-        help="Path to the private key file. Only the Odoo user should have "
-        "read permissions for that file.",
+        string="Private key location",
+        help=(
+            "Path to the private key file. Only the Odoo user should have read"
+            " permissions for that file."
+        ),
     )
+
     sftp_public_host_key = fields.Char(
-        "Public host key",
-        help="Verify SFTP server's identity using its public rsa-key. "
-        "The host key verification protects you from man-in-the-middle attacks. "
-        "Can be generated with command 'ssh-keyscan -p PORT -H HOST/IP' and the right key is immediately after the"
-        " words 'ssh-rsa'.",
+        string="Public host key",
+        help=(
+            "Verify SFTP server's identity using its public rsa-key. The host"
+            " key verification protects you from man-in-the-middle attacks."
+            " Can be generated with command 'ssh-keyscan -p PORT -H HOST/IP'"
+            " and the right key is immediately after the words 'ssh-rsa'."
+        ),
     )
+
     backup_format = fields.Selection(
-        [
+        selection=[
             ("zip", "zip (includes filestore)"),
             ("dump", "pg_dump custom format (without filestore)"),
         ],
