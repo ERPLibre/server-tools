@@ -3,6 +3,7 @@
 # Copyright 2016 Grupo ESOC Ingenieria de Servicios, S.L.U. - Jairo Llopis
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
+import base64
 import logging
 import os
 import shutil
@@ -10,7 +11,7 @@ import traceback
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from glob import iglob
-import base64
+
 import paramiko
 
 from odoo import _, api, exceptions, fields, models, tools
