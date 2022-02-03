@@ -44,10 +44,13 @@ class DbBackup(models.Model):
         help="Summary of this backup process",
     )
 
-    folder = fields.Char(
-        required=True,
-        default=lambda self: self._default_folder(),
-        help="Absolute path for storing the backups",
+    backup_format = fields.Selection(
+        selection=[
+            ("zip", "zip (includes filestore)"),
+            ("dump", "pg_dump custom format (without filestore)"),
+        ],
+        default="zip",
+        help="Choose the format for this backup.",
     )
 
     days_to_keep = fields.Integer(
@@ -56,6 +59,12 @@ class DbBackup(models.Model):
             "Backups older than this will be deleted automatically. Set 0 to"
             " disable autodeletion."
         ),
+    )
+
+    folder = fields.Char(
+        required=True,
+        default=lambda self: self._default_folder(),
+        help="Absolute path for storing the backups",
     )
 
     method = fields.Selection(
@@ -72,26 +81,18 @@ class DbBackup(models.Model):
         ),
     )
 
-    sftp_port = fields.Integer(
-        string="SFTP Port",
-        default=22,
-        help="The port on the FTP server that accepts SSH/SFTP calls.",
-    )
-
-    sftp_user = fields.Char(
-        string="Username in the SFTP Server",
-        help=(
-            "The username where the SFTP connection should be made with. This"
-            " is the user on the external server."
-        ),
-    )
-
     sftp_password = fields.Char(
         string="SFTP Password",
         help=(
             "The password for the SFTP connection. If you specify a private"
             " key file, then this is the password to decrypt it."
         ),
+    )
+
+    sftp_port = fields.Integer(
+        string="SFTP Port",
+        default=22,
+        help="The port on the FTP server that accepts SSH/SFTP calls.",
     )
 
     sftp_private_key = fields.Char(
@@ -112,13 +113,12 @@ class DbBackup(models.Model):
         ),
     )
 
-    backup_format = fields.Selection(
-        selection=[
-            ("zip", "zip (includes filestore)"),
-            ("dump", "pg_dump custom format (without filestore)"),
-        ],
-        default="zip",
-        help="Choose the format for this backup.",
+    sftp_user = fields.Char(
+        string="Username in the SFTP Server",
+        help=(
+            "The username where the SFTP connection should be made with. This"
+            " is the user on the external server."
+        ),
     )
 
     @api.model
