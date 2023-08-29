@@ -4,6 +4,7 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 import logging
+import base64
 import os
 import shutil
 import traceback
@@ -20,6 +21,10 @@ try:
     import pysftp
 except ImportError:  # pragma: no cover
     _logger.debug("Cannot import pysftp")
+try:
+    import paramiko
+except ImportError:  # pragma: no cover
+    _logger.debug("Cannot import paramiko")
 
 
 class DbBackup(models.Model):
@@ -90,6 +95,15 @@ class DbBackup(models.Model):
         help=(
             "Path to the private key file. Only the Odoo user should have "
             "read permissions for that file."
+        ),
+    )
+    sftp_public_host_key = fields.Char(
+        string="Public host key",
+        help=(
+            "Verify SFTP server's identity using its public rsa-key. The host"
+            " key verification protects you from man-in-the-middle attacks."
+            " Can be generated with command 'ssh-keyscan -p PORT -H HOST/IP'"
+            " and the right key is immediately after the words 'ssh-rsa'."
         ),
     )
 
@@ -306,6 +320,22 @@ class DbBackup(models.Model):
             "username": self.sftp_user,
             "port": self.sftp_port,
         }
+
+        # not empty sftp_public_key means that we should verify sftp server with it
+        cnopts = pysftp.CnOpts()
+        if self.sftp_public_host_key:
+            key = paramiko.RSAKey(
+                data=base64.b64decode(self.sftp_public_host_key)
+            )
+            cnopts.hostkeys.add(self.sftp_host, "ssh-rsa", key)
+        else:
+            cnopts.hostkeys = None
+
+        _logger.debug(
+            "Trying to connect to sftp://%(username)s@%(host)s:%(port)d",
+            extra=params,
+        )
+
         _logger.debug(
             "Trying to connect to sftp://%(username)s@%(host)s:%(port)d",
             extra=params,
@@ -317,4 +347,4 @@ class DbBackup(models.Model):
         else:
             params["password"] = self.sftp_password
 
-        return pysftp.Connection(**params)
+        return pysftp.Connection(**params, cnopts=cnopts)
