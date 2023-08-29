@@ -99,7 +99,9 @@ class TestDbBackup(common.TransactionCase):
     @patch("%s._" % model)
     def test_action_sftp_test_connection_success(self, _):
         """It should raise connection succeeded warning"""
-        with patch("%s.sftp_connection" % class_name, new_callable=PropertyMock):
+        with patch(
+            "%s.sftp_connection" % class_name, new_callable=PropertyMock
+        ):
             rec_id = self.new_record()
             with self.assertRaises(UserError):
                 rec_id.action_sftp_test_connection()
@@ -122,7 +124,9 @@ class TestDbBackup(common.TransactionCase):
         rec_id = self.new_record("local")
         filename = rec_id.filename(datetime.now())
         rec_id.action_backup()
-        generated_backup = [f for f in os.listdir(rec_id.folder) if f >= filename]
+        generated_backup = [
+            f for f in os.listdir(rec_id.folder) if f >= filename
+        ]
         self.assertEqual(1, len(generated_backup))
 
     def test_action_backup_local_cleanup(self):
@@ -133,12 +137,16 @@ class TestDbBackup(common.TransactionCase):
         with patch("%s.datetime" % model) as mock_date:
             mock_date.now.return_value = old_date
             rec_id.action_backup()
-        generated_backup = [f for f in os.listdir(rec_id.folder) if f >= filename]
+        generated_backup = [
+            f for f in os.listdir(rec_id.folder) if f >= filename
+        ]
         self.assertEqual(2, len(generated_backup))
 
         filename = rec_id.filename(datetime.now())
         rec_id.action_backup()
-        generated_backup = [f for f in os.listdir(rec_id.folder) if f >= filename]
+        generated_backup = [
+            f for f in os.listdir(rec_id.folder) if f >= filename
+        ]
         self.assertEqual(1, len(generated_backup))
 
     def test_action_backup_sftp_mkdirs(self):
@@ -146,7 +154,9 @@ class TestDbBackup(common.TransactionCase):
         rec_id = self.new_record()
         with self.mock_assets():
             with self.patch_filtered_sftp(rec_id):
-                with patch("%s.cleanup" % class_name, new_callable=PropertyMock):
+                with patch(
+                    "%s.cleanup" % class_name, new_callable=PropertyMock
+                ):
                     conn = rec_id.sftp_connection().__enter__()
                     rec_id.action_backup()
                     conn.makedirs.assert_called_once_with(rec_id.folder)
@@ -156,7 +166,9 @@ class TestDbBackup(common.TransactionCase):
         rec_id = self.new_record()
         with self.mock_assets():
             with self.patch_filtered_sftp(rec_id):
-                with patch("%s.cleanup" % class_name, new_callable=PropertyMock):
+                with patch(
+                    "%s.cleanup" % class_name, new_callable=PropertyMock
+                ):
                     conn = rec_id.sftp_connection().__enter__()
                     conn.makedirs.side_effect = TestConnectionException
                     rec_id.action_backup()
@@ -168,10 +180,14 @@ class TestDbBackup(common.TransactionCase):
         rec_id = self.new_record()
         with self.mock_assets() as assets:
             with self.patch_filtered_sftp(rec_id):
-                with patch("%s.cleanup" % class_name, new_callable=PropertyMock):
+                with patch(
+                    "%s.cleanup" % class_name, new_callable=PropertyMock
+                ):
                     conn = rec_id.sftp_connection().__enter__()
                     rec_id.action_backup()
-                    conn.open.assert_called_once_with(assets["os"].path.join(), "wb")
+                    conn.open.assert_called_once_with(
+                        assets["os"].path.join(), "wb"
+                    )
 
     def test_action_backup_all_search(self):
         """It should search all records"""

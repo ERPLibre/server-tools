@@ -49,8 +49,10 @@ class DbBackup(models.Model):
     days_to_keep = fields.Integer(
         required=True,
         default=0,
-        help="Backups older than this will be deleted automatically. "
-        "Set 0 to disable autodeletion.",
+        help=(
+            "Backups older than this will be deleted automatically. "
+            "Set 0 to disable autodeletion."
+        ),
     )
     method = fields.Selection(
         [("local", "Local disk"), ("sftp", "Remote SFTP server")],
@@ -78,13 +80,17 @@ class DbBackup(models.Model):
     )
     sftp_password = fields.Char(
         "SFTP Password",
-        help="The password for the SFTP connection. If you specify a private "
-        "key file, then this is the password to decrypt it.",
+        help=(
+            "The password for the SFTP connection. If you specify a private "
+            "key file, then this is the password to decrypt it."
+        ),
     )
     sftp_private_key = fields.Char(
         "Private key location",
-        help="Path to the private key file. Only the Odoo user should have "
-        "read permissions for that file.",
+        help=(
+            "Path to the private key file. Only the Odoo user should have "
+            "read permissions for that file."
+        ),
     )
 
     backup_format = fields.Selection(
@@ -99,7 +105,9 @@ class DbBackup(models.Model):
     @api.model
     def _default_folder(self):
         """Default to ``backups`` folder inside current server datadir."""
-        return os.path.join(tools.config["data_dir"], "backups", self.env.cr.dbname)
+        return os.path.join(
+            tools.config["data_dir"], "backups", self.env.cr.dbname
+        )
 
     @api.depends("folder", "method", "sftp_host", "sftp_port", "sftp_user")
     def _compute_name(self):
@@ -166,7 +174,9 @@ class DbBackup(models.Model):
                     # Generate new backup
                     else:
                         db.dump_db(
-                            self.env.cr.dbname, destiny, backup_format=rec.backup_format
+                            self.env.cr.dbname,
+                            destiny,
+                            backup_format=rec.backup_format,
                         )
                         backup = backup or destiny.name
                 successful |= rec
@@ -179,7 +189,9 @@ class DbBackup(models.Model):
                 with rec.backup_log():
 
                     cached = db.dump_db(
-                        self.env.cr.dbname, None, backup_format=rec.backup_format
+                        self.env.cr.dbname,
+                        None,
+                        backup_format=rec.backup_format,
                     )
 
                     with cached:
@@ -217,7 +229,9 @@ class DbBackup(models.Model):
             self.message_post(  # pylint: disable=translation-required
                 body="<p>%s</p><pre>%s</pre>"
                 % (_("Database backup failed."), escaped_tb),
-                subtype_id=self.env.ref("auto_backup.mail_message_subtype_failure").id,
+                subtype_id=self.env.ref(
+                    "auto_backup.mail_message_subtype_failure"
+                ).id,
             )
         else:
             _logger.info("Database backup succeeded: %s", self.name)
@@ -268,7 +282,9 @@ class DbBackup(models.Model):
                 subtype_id=self.env.ref("auto_backup.failure").id,
             )
         else:
-            _logger.info("Cleanup of old database backups succeeded: %s", self.name)
+            _logger.info(
+                "Cleanup of old database backups succeeded: %s", self.name
+            )
 
     @staticmethod
     def filename(when, ext="zip"):
@@ -291,7 +307,8 @@ class DbBackup(models.Model):
             "port": self.sftp_port,
         }
         _logger.debug(
-            "Trying to connect to sftp://%(username)s@%(host)s:%(port)d", extra=params
+            "Trying to connect to sftp://%(username)s@%(host)s:%(port)d",
+            extra=params,
         )
         if self.sftp_private_key:
             params["private_key"] = self.sftp_private_key
