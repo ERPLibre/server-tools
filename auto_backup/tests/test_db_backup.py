@@ -9,7 +9,6 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 
 import mock
-
 from odoo import exceptions, tools
 from odoo.tests import common
 

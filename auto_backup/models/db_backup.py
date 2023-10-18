@@ -13,7 +13,6 @@ from datetime import datetime, timedelta
 from glob import iglob
 
 import paramiko
-
 from odoo import _, api, exceptions, fields, models, tools
 from odoo.service import db
 
