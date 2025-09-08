@@ -11,6 +11,8 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from glob import iglob
 
+import base64
+import paramiko
 import pysftp
 
 from odoo import _, api, exceptions, fields, models, tools
@@ -92,6 +94,30 @@ class DbBackup(models.Model):
         ],
         default="zip",
         help="Choose the format for this backup.",
+    )
+
+    sftp_public_host_key = fields.Char(
+        string="Public host key",
+        help=(
+            "Verify SFTP server's identity using its public rsa-key (or specify by sftp_public_encryption). The host"
+            " key verification protects you from man-in-the-middle attacks."
+            " Can be generated with command 'ssh-keyscan -p PORT -H HOST/IP'"
+            " and the right key is immediately after the words 'ssh-rsa'."
+            " You need to enable configuration PasswordAuthentication into /etc/ssh/sshd_config"
+        ),
+    )
+
+    sftp_public_encryption = fields.Selection(
+        selection=[
+            ("rsa-key", "rsa-key"),
+            ("ed25519-key", "ed25519-key"),
+        ],
+        required=True,
+        default="ed25519-key",
+        string="Public encryption to validate",
+        help=(
+            "Verify SFTP server's identity encryption type."
+        ),
     )
 
     @api.model
@@ -278,6 +304,25 @@ class DbBackup(models.Model):
             "username": self.sftp_user,
             "port": self.sftp_port,
         }
+
+        # not empty sftp_public_key means that we should verify sftp server with it
+        cnopts = pysftp.CnOpts()
+        if self.sftp_public_host_key:
+            if self.sftp_public_encryption == "rsa-key":
+                key = paramiko.RSAKey(
+                    data=base64.b64decode(self.sftp_public_host_key)
+                )
+                cnopts.hostkeys.add(self.sftp_host, "ssh-rsa", key)
+            elif self.sftp_public_encryption == "ed25519-key":
+                key = paramiko.Ed25519Key(
+                    data=base64.b64decode(self.sftp_public_host_key)
+                )
+                cnopts.hostkeys.add(self.sftp_host, "ssh-ed25519", key)
+            else:
+                cnopts.hostkeys = None
+        else:
+            cnopts.hostkeys = None
+
         _logger.debug(
             "Trying to connect to sftp://%(username)s@%(host)s:%(port)d", extra=params
         )
@@ -288,4 +333,4 @@ class DbBackup(models.Model):
         else:
             params["password"] = self.sftp_password
 
-        return pysftp.Connection(**params)
+        return pysftp.Connection(**params, cnopts=cnopts)
