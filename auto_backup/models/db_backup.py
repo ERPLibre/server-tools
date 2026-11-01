@@ -3,17 +3,18 @@
 # Copyright 2016 Grupo ESOC Ingenieria de Servicios, S.L.U. - Jairo Llopis
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
+import base64
+import errno
 import logging
 import os
+import posixpath
 import shutil
 import traceback
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from glob import iglob
 
-import base64
 import paramiko
-import pysftp
 
 from odoo import _, api, exceptions, fields, models, tools
 from odoo.exceptions import UserError
@@ -154,11 +155,7 @@ class DbBackup(models.Model):
             # Just open and close the connection
             with self.sftp_connection():
                 raise UserError(_("Connection Test Succeeded!"))
-        except (
-            pysftp.CredentialException,
-            pysftp.ConnectionException,
-            pysftp.SSHException,
-        ) as exc:
+        except (paramiko.SSHException, OSError) as exc:
             _logger.info("Connection Test Failed!", exc_info=True)
             raise UserError(self.env._("Connection Test Failed!")) from exc
 
@@ -203,9 +200,9 @@ class DbBackup(models.Model):
                     with cached:
                         with rec.sftp_connection() as remote:
                             try:
-                                remote.makedirs(rec.folder)
-                            except pysftp.ConnectionException as exc:
-                                _logger.exception(f"pysftp ConnectionException: {exc}")
+                                self._sftp_makedirs(remote, rec.folder)
+                            except (paramiko.SSHException, OSError):
+                                _logger.exception("SFTP makedirs failed")
 
                             # Copy cached backup to remote server
                             with remote.open(
@@ -296,41 +293,84 @@ class DbBackup(models.Model):
             when, ext="dump.zip" if ext == "zip" else ext
         )
 
-    def sftp_connection(self):
-        """Return a new SFTP connection with found parameters."""
-        self.ensure_one()
+    @staticmethod
+    def _sftp_makedirs(sftp, path):
+        """Create the remote directory path and its missing parents.
+
+        An existing directory is left as is, like ``os.makedirs(...,
+        exist_ok=True)``.
+        """
+        current = "/" if path.startswith("/") else ""
+        for part in path.strip("/").split("/"):
+            current = posixpath.join(current, part)
+            try:
+                sftp.stat(current)
+            except OSError as exc:
+                if exc.errno not in (None, errno.ENOENT):
+                    raise
+                sftp.mkdir(current)
+
+    def _sftp_client_params(self):
+        """Return the keyword arguments of ``paramiko.SSHClient.connect``.
+
+        A private key file is opened with the password as its passphrase;
+        without one, the password authenticates. With neither, the SSH agent
+        and the default keys of the Odoo user are tried.
+        """
         params = {
-            "host": self.sftp_host,
-            "username": self.sftp_user,
+            "hostname": self.sftp_host,
             "port": self.sftp_port,
+            "username": self.sftp_user,
         }
-
-        # not empty sftp_public_key means that we should verify sftp server with it
-        cnopts = pysftp.CnOpts()
-        if self.sftp_public_host_key:
-            if self.sftp_public_encryption == "rsa-key":
-                key = paramiko.RSAKey(
-                    data=base64.b64decode(self.sftp_public_host_key)
-                )
-                cnopts.hostkeys.add(self.sftp_host, "ssh-rsa", key)
-            elif self.sftp_public_encryption == "ed25519-key":
-                key = paramiko.Ed25519Key(
-                    data=base64.b64decode(self.sftp_public_host_key)
-                )
-                cnopts.hostkeys.add(self.sftp_host, "ssh-ed25519", key)
-            else:
-                cnopts.hostkeys = None
-        else:
-            cnopts.hostkeys = None
-
-        _logger.debug(
-            "Trying to connect to sftp://%(username)s@%(host)s:%(port)d", extra=params
-        )
         if self.sftp_private_key:
-            params["private_key"] = self.sftp_private_key
-            if self.sftp_password:
-                params["private_key_pass"] = self.sftp_password
+            params["key_filename"] = self.sftp_private_key
+            params["passphrase"] = self.sftp_password or None
         else:
-            params["password"] = self.sftp_password
+            params["password"] = self.sftp_password or None
+        search_keys = not self.sftp_private_key and not self.sftp_password
+        params["allow_agent"] = search_keys
+        params["look_for_keys"] = search_keys
+        return params
 
-        return pysftp.Connection(**params, cnopts=cnopts)
+    @contextmanager
+    def sftp_connection(self):
+        """Yield an SFTP client connected with the found parameters.
+
+        The SSH session closes on exit. A public host key makes the server's
+        identity mandatory: a server presenting another key is refused.
+        Without one, the server is accepted as it presents itself.
+        """
+        self.ensure_one()
+        client = paramiko.SSHClient()
+        key = None
+        if self.sftp_public_host_key:
+            key_data = base64.b64decode(self.sftp_public_host_key)
+            if self.sftp_public_encryption == "rsa-key":
+                key = paramiko.RSAKey(data=key_data)
+            elif self.sftp_public_encryption == "ed25519-key":
+                key = paramiko.Ed25519Key(data=key_data)
+        if key:
+            host_keys = client.get_host_keys()
+            # known_hosts names a server off port 22 as "[host]:port"
+            for name in {
+                self.sftp_host,
+                f"[{self.sftp_host}]:{self.sftp_port}",
+            }:
+                host_keys.add(name, key.get_name(), key)
+            client.set_missing_host_key_policy(paramiko.RejectPolicy())
+        else:
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+        params = self._sftp_client_params()
+        _logger.debug(
+            "Trying to connect to sftp://%s@%s:%d",
+            params["username"],
+            params["hostname"],
+            params["port"],
+        )
+        try:
+            client.connect(**params)
+            with client.open_sftp() as sftp:
+                yield sftp
+        finally:
+            client.close()

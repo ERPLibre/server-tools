@@ -46,7 +46,7 @@ Before installing this module, you need to execute:
 
 ::
 
-   pip3 install pysftp==0.2.9
+   pip3 install 'paramiko>=5'
 
 Configuration
 =============
@@ -71,7 +71,7 @@ Keep your data safe, through an SSH tunnel!
 Want to go even further and write your backups to an external server?
 You can with this module! Specify the credentials to the server, specify
 a path and everything will be backed up automatically. This is done
-through an SSH (encrypted) tunnel, thanks to pysftp, so your data is
+through an SSH (encrypted) tunnel, thanks to paramiko, so your data is
 safe!
 
 Test connection

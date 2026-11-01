@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from unittest.mock import PropertyMock, patch
 
-import pysftp
+import paramiko
 
 from odoo import tools
 from odoo.exceptions import UserError
@@ -23,9 +23,9 @@ model = "odoo.addons.auto_backup.models.db_backup"
 class_name = f"{model}.DbBackup"
 
 
-class TestConnectionException(pysftp.ConnectionException):
+class TestConnectionException(paramiko.SSHException):
     def __init__(self):
-        super().__init__("test", "test")
+        super().__init__("test")
 
 
 class TestDbBackup(common.TransactionCase):
@@ -141,19 +141,20 @@ class TestDbBackup(common.TransactionCase):
         with self.mock_assets():
             with self.patch_filtered_sftp(rec_id):
                 with patch(f"{class_name}.cleanup", new_callable=PropertyMock):
-                    conn = rec_id.sftp_connection().__enter__()
-                    rec_id.action_backup()
-                    conn.makedirs.assert_called_once_with(rec_id.folder)
+                    with patch(f"{class_name}._sftp_makedirs") as makedirs:
+                        conn = rec_id.sftp_connection().__enter__()
+                        rec_id.action_backup()
+                        makedirs.assert_called_once_with(conn, rec_id.folder)
 
     def _test_action_backup_sftp_mkdirs_conn_exception(self):
-        """It should guard from ConnectionException on remote.mkdirs"""
+        """It should guard from an SSH error while creating remote dirs"""
         rec_id = self.new_record()
         with self.mock_assets():
             with self.patch_filtered_sftp(rec_id):
                 with patch(f"{class_name}.cleanup", new_callable=PropertyMock):
-                    conn = rec_id.sftp_connection().__enter__()
-                    conn.makedirs.side_effect = TestConnectionException
-                    rec_id.action_backup()
+                    with patch(f"{class_name}._sftp_makedirs") as makedirs:
+                        makedirs.side_effect = TestConnectionException
+                        rec_id.action_backup()
                     # No error was raised, test pass
                     self.assertTrue(True)
 
@@ -181,41 +182,96 @@ class TestDbBackup(common.TransactionCase):
             res = rec_id.action_backup_all()
             self.assertEqual(rec_id.search().action_backup(), res)
 
-    @patch(f"{model}.pysftp")
-    def test_sftp_connection_init_passwd(self, pysftp):
-        """It should initiate SFTP connection w/ proper args and pass"""
+    @patch(f"{model}.paramiko.SSHClient")
+    def test_sftp_connection_init_passwd(self, ssh_client):
+        """It should connect with the password, without searching keys"""
         rec_id = self.new_record()
-        rec_id.sftp_connection()
-        pysftp.Connection.assert_called_once_with(
-            host=rec_id.sftp_host,
-            username=rec_id.sftp_user,
+        with rec_id.sftp_connection():
+            pass
+        ssh_client.return_value.connect.assert_called_once_with(
+            hostname=rec_id.sftp_host,
             port=rec_id.sftp_port,
+            username=rec_id.sftp_user,
             password=rec_id.sftp_password,
+            allow_agent=False,
+            look_for_keys=False,
         )
 
-    @patch(f"{model}.pysftp")
-    def test_sftp_connection_init_key(self, pysftp):
-        """It should initiate SFTP connection w/ proper args and key"""
+    @patch(f"{model}.paramiko.SSHClient")
+    def test_sftp_connection_init_key(self, ssh_client):
+        """It should connect with the key file and its passphrase"""
         rec_id = self.new_record()
         rec_id.write({"sftp_private_key": "pkey", "sftp_password": "pkeypass"})
-        rec_id.sftp_connection()
-        pysftp.Connection.assert_called_once_with(
-            host=rec_id.sftp_host,
-            username=rec_id.sftp_user,
+        with rec_id.sftp_connection():
+            pass
+        ssh_client.return_value.connect.assert_called_once_with(
+            hostname=rec_id.sftp_host,
             port=rec_id.sftp_port,
-            private_key=rec_id.sftp_private_key,
-            private_key_pass=rec_id.sftp_password,
+            username=rec_id.sftp_user,
+            key_filename=rec_id.sftp_private_key,
+            passphrase=rec_id.sftp_password,
+            allow_agent=False,
+            look_for_keys=False,
         )
 
-    @patch(f"{model}.pysftp")
-    def test_sftp_connection_return(self, pysftp):
-        """It should return new sftp connection"""
+    @patch(f"{model}.paramiko.SSHClient")
+    def test_sftp_connection_return(self, ssh_client):
+        """It should yield the SFTP client and close the session after"""
         rec_id = self.new_record()
-        res = rec_id.sftp_connection()
-        self.assertEqual(
-            pysftp.Connection(),
-            res,
+        client = ssh_client.return_value
+        with rec_id.sftp_connection() as remote:
+            self.assertEqual(client.open_sftp().__enter__(), remote)
+            client.close.assert_not_called()
+        client.close.assert_called_once_with()
+
+    @patch(f"{model}.paramiko.SSHClient")
+    def test_sftp_connection_closes_on_error(self, ssh_client):
+        """It should close the session when the connection fails"""
+        rec_id = self.new_record()
+        client = ssh_client.return_value
+        client.connect.side_effect = paramiko.AuthenticationException
+        with (
+            self.assertRaises(paramiko.AuthenticationException),
+            rec_id.sftp_connection(),
+        ):
+            pass
+        client.close.assert_called_once_with()
+
+    @patch.object(paramiko.SSHClient, "open_sftp")
+    @patch.object(paramiko.SSHClient, "connect", autospec=True)
+    def test_sftp_connection_host_key(self, connect, open_sftp):
+        """It should require the configured host key, port included"""
+        rec_id = self.new_record()
+        key = paramiko.RSAKey.generate(2048)
+        rec_id.write(
+            {
+                "sftp_port": 2222,
+                "sftp_public_host_key": key.get_base64(),
+                "sftp_public_encryption": "rsa-key",
+            }
         )
+        with rec_id.sftp_connection():
+            pass
+        client = connect.call_args.args[0]
+        host_key = client.get_host_keys().lookup(f"[{rec_id.sftp_host}]:2222")
+        self.assertEqual(key, host_key["ssh-rsa"])
+        self.assertIsInstance(client._policy, paramiko.RejectPolicy)
+
+    def test_sftp_makedirs(self):
+        """It should create the missing parents and keep the existing ones"""
+        existing = {"/backups"}
+        created = []
+
+        class FakeSftp:
+            def stat(self, path):
+                if path not in existing and path not in created:
+                    raise FileNotFoundError(2, "No such file")
+
+            def mkdir(self, path):
+                created.append(path)
+
+        self.Model._sftp_makedirs(FakeSftp(), "/backups/db/daily")
+        self.assertEqual(["/backups/db", "/backups/db/daily"], created)
 
     def test_filename_default(self):
         """It should not error and should return a .dump.zip file str"""
